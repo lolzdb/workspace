@@ -1,0 +1,87 @@
+#include<stdio.h>
+#include<stdlib.h>
+#include<sys/socket.h>
+#include<arpa/inet.h>
+#include<sys/epoll.h>
+#include<errno.h>
+#include<unistd.h>
+#include<sys/un.h>
+#include<fcntl.h>
+#include<sys/types.h>
+#include<stddef.h>
+#include<pthread.h>
+
+#define MAXNUM 10
+
+pthread_mutex_t lock;
+pthread_cond_t queue;
+int sk;
+struct mssage{
+    int type;
+    char buff[512];
+};
+
+int sendfile(int socket,char *path){
+    int file=open(path,O_RDONLY),count;
+    char buff[1024];
+    if(file<0)return 0;
+    while((count=read(file,buff,1024))>0){
+        count=send(socket,buff,count,0);
+        if(count<1)return 0;
+    }
+    return 1;
+}
+
+void *worker(void *argc){
+    int ck,len;
+    struct sockaddr_in client;
+    struct mssage ms;
+    while(1){
+        pthread_mutex_lock(&lock);
+        pthread_cond_wait(&queue,&lock);
+        ck=accept(sk,(struct sockaddr *)&client,&len);
+        pthread_cond_signal(&queue);
+        len=recv(ck,&ms,sizeof(ms),0);
+        if(ms.type!=1){
+            printf("error info");
+            return NULL;
+        }
+        sendfile(ck,ms.buff);
+        pthread_mutex_unlock(&lock);
+    }
+}
+
+int init(){
+    struct sockaddr_in sever;
+    int len=sizeof(sever);
+    pthread_t threadpoll[MAXNUM];
+    sk=socket(AF_INET,SOCK_STREAM,0);
+    memset(&sever,0,len);
+    sever.sin_family=AF_INET;
+    sever.sin_port=htons(10701);
+    sever.sin_addr.s_addr=inet_addr("127.0.0.1");
+    if(bind(sk,(struct sockaddr *)&sever,len)<0){
+         perror("bind ");
+         return 0;
+    }
+    if(listen(sk,24)<0){
+        perror("listen ");
+         return 0;
+    }
+    pthread_mutex_init(&lock,NULL);
+    pthread_cond_init(&queue,NULL);
+    for(int i=0;i<MAXNUM;i++){
+        pthread_create(&threadpoll[i],NULL,worker,NULL);
+    }
+    sleep(2);
+    pthread_cond_signal(&queue);
+    pthread_join(threadpoll[1],NULL);
+    pthread_join(threadpoll[2],NULL);
+    pthread_join(threadpoll[0],NULL);
+    return 1;
+}
+
+int main(){
+    init();
+    return 0;
+}
