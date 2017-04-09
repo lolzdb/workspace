@@ -1,0 +1,464 @@
+#include 'dirent.h'
+
+char* createSpace(char *data,int len){
+    char *ndata=(char *)malloc(sizeof(char)*(len+512));
+    for(int i=0;i<len;i++)
+        ndata[i]=data[i];
+    free(data);
+    return ndata;
+}
+
+char* getName(char *path){
+    struct stat fileInfo;
+    DIR *dir;
+    struct dirent *dirInfo;
+    char *info=(char *)malloc(sizeof(char)*512);
+    int len=512,index=0,nlen;
+    stat(path,&fileInfo);
+    if(S_ISREG(fileInfo.st_mode))return 0;
+    dir=opendir(path);
+    while((dirInfo=readdir(dir))){
+        if(strcmp(dirInfo->d_name,".")==0||strcmp(dirInfo->d_name,"..")==0)continue;
+        if(dirInfo->d_type==4){
+            strcat(info,"D ");
+            index+=2;
+        }
+        nlen=strlen(dirInfo->d_name)+index;
+        if(nlen>=len){
+            len+=512;
+            info=createSpace(info,len);
+        }
+        for(int i=index,j=0;i<nlen;i++,j++){
+            info[i]=dirInfo->d_name[j];
+        }
+        index=nlen;
+        info[index++]=1;
+    }
+    info[--index]=0;
+    return info;
+}
+
+int push(stack *s,int *top,DIR *data,int start){
+    s[++(*top)].data=data;
+    s[*top].start=start;
+    return 0;
+}
+
+DIR* pop(int *index,stack *s,int *top){
+    *index=s[*top].start;
+    return s[(*top)--].data;
+}
+
+int deleteFile(char *path){
+    char *filepath=(char *)malloc(sizeof(char)*1024);
+    stack *s=(stack *)malloc(sizeof(stack)*256);
+    int index=strlen(path),top=0;
+    DIR *curDir;
+    struct dirent *dir;
+    s[top].data=NULL;
+    s[top].start=0;
+    strcpy(filepath,path);
+    curDir=opendir(path);
+    while(curDir!=NULL){
+        while((dir=readdir(curDir))!=NULL){
+            if(dir->d_type==4){
+                if(strcmp(dir->d_name,".")==0||strcmp(dir->d_name,"..")==0)continue;
+                push(s,&top,curDir,index);
+                filepath[index]='/';
+                filepath[index+1]=0;
+                strcat(filepath,dir->d_name);
+                printf("2 filepath=%s\n",filepath);
+                index+=1+strlen(dir->d_name);
+                filepath[index]=0;
+                curDir=opendir(filepath);
+                printf("filepath=%s\n",filepath);
+            }else{
+                filepath[index]='/';
+                filepath[index+1]=0;
+                strcat(filepath,dir->d_name);
+                remove(filepath);
+                filepath[index]=0;
+            }
+        }
+        remove(filepath);
+        curDir=pop(&index,s,&top);
+        filepath[index]=0;
+    }
+    free(filepath);
+    free(s);
+    return 0;
+}
+
+int repname(char *path,char *oldname,char *newname){
+    char path1[1024];
+    char path2[1024];
+    strcpy(path1,path);
+    strcpy(path2,path);
+    strcat(path1,"/");
+    strcat(path2,"/");
+    strcat(path1,oldname);
+    strcat(path2,newname);
+    rename(path1,path2);
+    return 0;
+}
+
+int createFile(char *path,char *fileNmae,int size){
+    char path1[1024];
+    strcpy(path1,path);
+    strcat(path1,"/");
+    strcat(path1,fileNmae);
+    creat(path1,0600);
+    truncate(path1,size);
+    return 0;
+}
+
+int getSize(char *path,char *filename){
+    struct stat buf;
+    char path1[1024];
+    stacpy(path1,path);
+    strcat(path1,"/");
+    strcat(path1,fileNmae);
+    stat(path1,&buf);
+    return buf.st_size;
+}#include 'control.h'
+
+int sendMsg(int sk,int size,char *filename){
+    struct conmsg msg;
+    msg.sum=strlen(filename);
+    msg.size=size;
+    strcpy(msg.data,filename);
+    send(sk,&conmsg,sizeof(struct conmsg));
+    return 0;
+}
+
+void recvMsg(int sk,int *size,char *filename){
+    int sum;
+    recv(sk,&sum,sizeof(sum),MSG_WAITALL);
+    recv(sk,size,sizeof(*size),MSG_WAITALL);
+    recv(sk,size,sum,MSG_WAITALL);
+}#include 'transfer.h'
+
+int createSocket(char *addr,int port,int sum){
+  int sk;
+  struct sockaddr_in ip;
+  sk=socket(AF_INET,SOCK_STREAM,0);
+  if(sk==-1){
+      perror("socket ");
+      return 0;
+  }
+  memset(&ip,0,sizeof(ip));
+  ip.sin_family=AF_INET;
+  ip.sin_port=htons(port);
+  ip.sin_addr.s_addr=inet_addr(addr);
+  if(bind(sk,(struct sockaddr *)&ip,sizeof(ip))<0){
+       perror("bind ");
+       return 0;
+  }
+  if(listen(sk,sum)<0){
+      perror("listen ");
+       return 0;
+  }
+  return sk;
+}
+
+int connect(char *addr,int port){
+  int sk;
+  struct sockaddr_in ip;
+  sk=socket(AF_INET,SOCK_STREAM,0);
+  if(sk==-1){
+      perror("socket ");
+      return 0;
+  }
+  memset(&ip,0,sizeof(ip));
+  ip.sin_family=AF_INET;
+  ip.sin_port=htons(port);
+  ip.sin_addr.s_addr=inet_addr(addr);
+  if(connect(sk,(struct sockaddr *)&ip,sizeof(ip))<0){
+       perror("connect ");
+       return 0;
+  }
+  return sk;
+}
+
+int sendn(int sk,char *data,int type,int size){
+  struct package buf;
+  buf.sum=size;
+  buf.mark=type;
+  strcpy(buf.data,data);
+  send(sk,&buf,sizeof(int)*2+buf.sum,0);
+  return 0;
+}
+
+void recvn(int sk,struct package *buf){
+   int sum,size=0,count;
+   recv(sk,&sum,sizeof(int),MSG_WAITALL);
+   recv(sk,&buf->mark,sizeof(int),MSG_WAITALL);
+   while(sum>size){
+      count=recv(sk,&buf->data[size],1024-size,0);
+      size+=count;
+   }
+   buf->data[sum]=0;
+}
+
+int sendSmallFile(int sk,int fd,int start,int end){
+    int count=start+1024,n;
+    char data[1025];
+    data[1024]=0;
+    while(count<end){
+        n=read(fd,data,1024);
+        if(n<0){
+            perror("file perror");
+            return -1;
+        }
+        sendn(sk,data,0,1024);
+        count+=1024;
+    }
+    n=read(fd,data,count-end);
+    data[n]=0;
+    sendn(sk,data,0,count-end);
+    close(fd);
+    return 0;
+}
+
+int sendBigFile(int sk,int fd,int start,int end){
+    char *file=mmap(0,start-end,PROT_READ,MAP_SHARED,file,start);
+    int count=1024,size=end-start;
+    while(count<size){
+        sendn(sk,&file[count],0,1024);
+    }
+    sendn(sk,&file[count],0,count-size);
+    munmap(file,size);
+    close(fd);
+    return 0;
+}
+
+int openfile(char *path){
+    int fd=open(path,O_RDWR);
+    if(fd<0){
+        perror("open file error");
+        return -1;
+    }
+    return fd;
+}
+
+void getStart(int num,int size,int *size,int *end,int count){
+    int m=size/count;
+    *start=(num-1)*m;
+    if(num==count)*end=size;
+    else *end=(num*m;)
+}
+
+int recvFile(int sk,int fd,int count){
+    struct package* s=(struct package*)malloc(sizeof(struct package));
+    int sum=0;
+    while(sum<count){
+        recvn(sk,s);
+        sum+=s->sum;
+        write(fd,&s->data,s->sum);
+    }
+    return 0;
+}
+
+#include<stdio.h>
+#include<string.h>
+#include<stdlib.h>
+
+int printfDir(char *dirInfo);
+char* getName(char *path);
+int deleteFile(char *path);
+int repname(char *path,char *oldname,char *newname);
+int createFile(char *path,char *fileNmae,int size);
+
+int main(){
+    createFile("/home/xws/workspace/linux/ftp","origin",1024);
+    return 0;
+}#include<stdio.h>
+#include<string.h>
+#include<stdlib.h>
+#include 'backups.h'
+#include 'transfer.h'
+
+int main(){
+    int sk=connect("127.0.0.1",10701);
+    
+}
+total 40
+-rw-rw-r-- 1 xws xws 6753 Apr  1 20:47 a.txt
+-rw-rw-r-- 1 xws xws  967 Apr  1 20:05 backups.c
+drwxrwxr-x 2 xws xws 4096 Mar 31 14:58 client
+-rw-rw-r-- 1 xws xws  158 Apr  1 20:47 client.c
+-rw-rw-r-- 1 xws xws  415 Apr  1 20:35 control.c
+-rw-rw-r-- 1 xws xws 3187 Apr  1 20:33 dirent.c
+drwxrwxr-x 2 xws xws 4096 Apr  1 20:31 head
+-rw-rw-r-- 1 xws xws  338 Mar 31 16:08 test.c
+-rw-rw-r-- 1 xws xws 2655 Apr  1 20:33 transfer.c
+.
+..
+a.txt
+backups.c
+client
+client.c
+control.c
+dirent.c
+head
+test.c
+transfer.c
+.vscode
+total 48
+-rwxrwxr-x 1 xws xws 13560 Feb  8 10:23 client
+-rw-rw-r-- 1 xws xws  1356 Feb  8 10:23 client.c
+-rw-rw-r-- 1 xws xws  2007 Feb  8 10:23 hello
+-rw-rw-r-- 1 xws xws  2007 Feb  8 10:23 hello_copy
+-rwxrwxr-x 1 xws xws 14104 Feb  8 10:23 poll
+-rw-rw-r-- 1 xws xws  1949 Feb  8 10:23 poll.c
+-rw-rw-r-- 1 xws xws     0 Feb  9 17:04 ThreadPool.cc
+#include<stdio.h>
+#include<stdlib.h>
+#include<sys/socket.h>
+#include<arpa/inet.h>
+#include<sys/epoll.h>
+#include<errno.h>
+#include<unistd.h>
+#include<sys/un.h>
+#include<fcntl.h>
+#include<sys/types.h>
+#include<stddef.h>
+#include<pthread.h>
+
+#define MAXNUM 10
+
+pthread_mutex_t lock;
+pthread_cond_t queue;
+int sk;
+struct mssage{
+    int type;
+    char buff[512];
+};
+
+int sendfile(int socket,char *path){
+    int file=open(path,O_RDONLY),count;
+    char buff[1024];
+    if(file<0)return 0;
+    while((count=read(file,buff,1024))>0){
+        count=send(socket,buff,count,0);
+        if(count<1)return 0;
+    }
+    return 1;
+}
+
+void *worker(void *argc){
+    int ck,len;
+    struct sockaddr_in client;
+    struct mssage ms;
+    while(1){
+        pthread_mutex_lock(&lock);
+        pthread_cond_wait(&queue,&lock);
+        ck=accept(sk,(struct sockaddr *)&client,&len);
+        pthread_cond_signal(&queue);
+        len=recv(ck,&ms,sizeof(ms),0);
+        if(ms.type!=1){
+            printf("error info");
+            return NULL;
+        }
+        sendfile(ck,ms.buff);
+        pthread_mutex_unlock(&lock);
+    }
+}
+
+int init(){
+    struct sockaddr_in sever;
+    int len=sizeof(sever);
+    pthread_t threadpoll[MAXNUM];
+    sk=socket(AF_INET,SOCK_STREAM,0);
+    memset(&sever,0,len);
+    sever.sin_family=AF_INET;
+    sever.sin_port=htons(10701);
+    sever.sin_addr.s_addr=inet_addr("127.0.0.1");
+    if(bind(sk,(struct sockaddr *)&sever,len)<0){
+         perror("bind ");
+         return 0;
+    }
+    if(listen(sk,24)<0){
+        perror("listen ");
+         return 0;
+    }
+    pthread_mutex_init(&lock,NULL);
+    pthread_cond_init(&queue,NULL);
+    for(int i=0;i<MAXNUM;i++){
+        pthread_create(&threadpoll[i],NULL,worker,NULL);
+    }
+    sleep(2);
+    pthread_cond_signal(&queue);
+    pthread_join(threadpoll[1],NULL);
+    pthread_join(threadpoll[2],NULL);
+    pthread_join(threadpoll[0],NULL);
+    return 1;
+}
+
+int main(){
+    init();
+    return 0;
+}
+#include<stdio.h>
+#include<stdlib.h>
+#include<sys/socket.h>
+#include<arpa/inet.h>
+#include<sys/epoll.h>
+#include<errno.h>
+#include<unistd.h>
+#include<sys/un.h>
+#include<fcntl.h>
+#include<sys/types.h>
+#include<stddef.h>
+#include<pthread.h>
+struct mssage{
+    int type;
+    char buff[512];
+};
+
+int sk;
+
+void *recvfile(void *argc){
+    int file=open("hello_copy",O_CREAT|O_WRONLY,0666),count;
+    perror("open ");
+    char buff[1024];
+    if(file<0){
+        perror("file ");
+         return 0;
+    }
+    while(1){
+        count=recv(sk,buff,1024,0);
+        perror("recv ");
+        if(count==0)break;
+        count=write(file,buff,count);
+        perror("write ");
+        if(count<0){
+            unlink("hello-copy");
+            break;
+        }
+    }
+    close(sk);
+}
+
+int main(){
+    struct sockaddr_in sever;
+    int len=sizeof(sever);
+    char filename[]="hello";
+    struct mssage ms;
+    pthread_t re;
+    sk=socket(AF_INET,SOCK_STREAM,0);
+    memset(&sever,0,len);
+    sever.sin_family=AF_INET;
+    sever.sin_port=htons(10701);
+    sever.sin_addr.s_addr=inet_addr("127.0.0.1");
+    if(connect(sk,(struct sockaddr *)&sever,len)<0){
+         perror("connect ");
+         return 0;
+    }
+    pthread_create(&re,NULL,recvfile,NULL);
+    ms.type=1;
+    strcpy(ms.buff,filename);
+    send(sk,&ms,sizeof(ms),0);
+    pthread_join(re,NULL);
+    return 1;
+}

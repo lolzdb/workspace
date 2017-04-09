@@ -22,16 +22,17 @@ struct message{
 
 int por[MAXTHREAD];
 int sk[MAXTHREAD];
-int id;
-int s;
 char ip[]="127.0.0.1";
 int size;
 pthread_barrier_t queue;
-pthread_mutex_t lock;
 
 int create(char *addr){
     struct sockaddr_in sever;
-    int s,port=10000;
+    int s,port;
+    if((s=socket(AF_INET,SOCK_STREAM,0))<0){
+        perror("socket ");
+        return -1;
+    }
     memset(&sever,0,sizeof(sever));
     sever.sin_family=AF_INET;
     sever.sin_addr.s_addr=inet_addr(addr);
@@ -45,7 +46,6 @@ int create(char *addr){
             perror("bind ");
             close(s);
             port++;
-            i--;
             continue;
         }
         if(listen(s,2)<0){
@@ -53,7 +53,7 @@ int create(char *addr){
             return -1;
         }
         sk[i]=s;
-        por[i]=port++;
+        por[i]=port;
     }
     return 1;
 }
@@ -77,19 +77,15 @@ int con(char *addr,int port){
 }
 
 void *work(void *argc){
-    int index;
-    char *buff=(char *)argc;
+    void **x=argc;
+    int id=*(int *)x[1];
+    char *buff=*(char **)x[0];
     struct sockaddr_in client;
-    struct message ms;
     int len,count,i;
-    int socket;
-    pthread_mutex_lock(&lock);
-    index=id++;
-    pthread_mutex_unlock(&lock);
-    printf(" id=%d  port=%d\n",index,por[index]);
-    ms.type=por[index];
-    send(s,&ms,sizeof(ms),0);
-    socket=accept(sk[id],(struct sockaddr *)&client,&len);
+    int socket=accept(sk[id],(struct sockaddr *)&client,&len);
+    printf(" id=%d ",id)
+    perror("accept ");
+    return NULL;
     i=(size/MAXTHREAD)*i;
     while(i<size){
         count=recv(socket,&buff[i],1024,0);
@@ -99,30 +95,30 @@ void *work(void *argc){
         count=recv(socket,&buff[i],size-(i-1024),0);
     }
     close(socket);
-    printf("%d finish recv\n",index);
     pthread_barrier_wait(&queue);
 }
 
 int main(){
+    int s=con(ip,10701);
     pthread_t pool[MAXTHREAD];
     struct message ms={1,"hello"};
-    int file,id=0;
+    int file;
     char *buff;
-    s=con(ip,10701);
+    void *argc[3];
     pthread_barrier_init(&queue,0,9);
+    argc[0]=&buff;
     send(s,&ms,sizeof(ms),0);
-    recv(s,&ms,sizeof(ms),0);
-    size=atoi(ms.filename);
-    printf("filesize=%s\n",ms.filename);
-    file=open("hello_copy",O_CREAT|O_RDWR,0666);
+    recv(s,&ms,szieof(ms),0);
+    sprintf(size,"%d",ms.filename);
+    file=open("hello_copy",O_CREAT|O_RDWR);
     ftruncate(file,size);
     buff=(unsigned char *)mmap(0,size,PROT_READ|PROT_WRITE,MAP_SHARED,file,0);
     if(create("127.0.0.1")<0)return 0;
     for(int i=0;i<MAXTHREAD;i++){
-        pthread_create(&pool[i],NULL,work,(void *)buff);
+        argc[1]=i;
+        pthread_create(pool[i],NULL,work,&argc);
     }
     pthread_barrier_wait(&queue);
-    msync(buff,size,MS_SYNC);
     munmap(buff,size);
     close(s);
     return 0;
