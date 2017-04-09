@@ -87,6 +87,7 @@ int download(int sk,int fd,int *record,char *buff,int num,int buffsize){
             rRecordUnlock();
             break;
         }
+        memcpy(&buff[count],buf.data,buf.sum);
         count+=buf.sum;
         filesize+=buf.sum;
         if(buffsize-count<1024){
@@ -110,12 +111,10 @@ int fusion(char *filename,int sum,char *path){
     strcat(file,"/");
     strcat(file,filename);
     strcpy(filecopy,file);
-    strcat(file,"0000");
     origin=open(file,O_RDWR|O_CREAT,0600);
     for(int i=0;i<sum;i++){
         strcpy(file,filecopy);
         num=itoa(i+1);
-        printf("num=%s\n",num);
         strcat(file,num);
         index=open(file,O_RDWR);
         while((n=read(index,databuff,4096))>0){
@@ -161,7 +160,7 @@ void* getFile(void *args){
     int start=record[index];
     int fd,sk;
     strcpy(file,path);
-    strcat(file,"/0");
+    strcat(file,"/");
     strcat(file,filename);
     strcat(file,num);
     fd=open(file,O_CREAT|O_RDWR,0600);

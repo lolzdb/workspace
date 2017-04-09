@@ -1,7 +1,5 @@
 #include "hall.h"
 
-
-
 int putInfo(MYSQL *data,char *path,int scale,int sk){
     struct nodeInfo *node=(struct nodeInfo *)malloc(sizeof(struct nodeInfo)*scale);
     char *sql=(char *)malloc(sizeof(char)*1024);
@@ -51,19 +49,14 @@ int handleFile(int sk){
     int fd,start,n;
     recvn(sk,&buf);
     strcpy(file,buf.data);
-    printf("filepath=%s",file);
     fd=openFile(file);
     recvn(sk,&buf);
     start=*(int *)buf.data;
     lseek(fd,start,SEEK_SET);
     while((n=read(fd,file,1024))!=0){
-        file[n]=0;
-        printf("%s",file);
         sendn(sk,file,0,n);
     }
-    printf("\n");
     n=-1;
     send(sk,&n,sizeof(int),0);
     return 1;
 }
-
